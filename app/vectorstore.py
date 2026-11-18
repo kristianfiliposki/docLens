@@ -30,17 +30,15 @@ def add_document_chunk(doc_id: str, text: str, source: str):
 
 def search_similar_documents(query: str, top_k: int = settings.TOP_K, source_filter: str = None) -> dict:
     """
-    RF-06: Cerca i top_k chunk più simili alla query. 
-    Permette un filtro opzionale per restringere la ricerca a un singolo documento.
+    Esegue la ricerca semantica e restituisce documenti, metadati e distanze (punteggi).
     """
     if not query or not query.strip():
         raise ValueError("La query di ricerca non può essere vuota.")
 
     query_embedding = get_embedding(query)
-
-    # Costruisce la clausola 'where' di ChromaDB se è stato richiesto un filtro per file
     where_clause = {"source": source_filter} if source_filter else None
 
+    # ChromaDB restituisce dizionari contenenti lists di liste per documents, metadatas e distances
     results = collection.query(
         query_embeddings=[query_embedding],
         n_results=top_k,
@@ -48,3 +46,4 @@ def search_similar_documents(query: str, top_k: int = settings.TOP_K, source_fil
     )
 
     return results
+

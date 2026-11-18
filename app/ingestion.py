@@ -96,3 +96,44 @@ def chunk_text_by_tokens(text: str, chunk_size: int = settings.CHUNK_SIZE, overl
         start += chunk_size - overlap
 
     return chunks
+
+import uuid
+from app.vectorstore import add_document_chunk
+
+def ingest_file(file: UploadFile) -> int:
+    """
+    Pipeline completa di ingestion:
+    1. Estrae e valida il testo del file caricato (RF-01, RF-02).
+    2. Divide il testo in chunk basati sui token con overlap (RF-03).
+    3. Per ogni chunk, calcola l'embedding e lo salva in ChromaDB con metadati ricchi (RF-05, RF-08).
+    Restituisce il numero totale di chunk indicizzati.
+    """
+    # 1. Estrazione e validazione preliminare
+    text = extract_text_from_file(file)
+    source_name = file.filename or "unknown"
+    
+    # 2. Chunking basato sui token
+    chunks = chunk_text_by_tokens(text)
+    
+    if not chunks:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossibile generare chunk dal documento fornito."
+        )
+
+    # 3. Indicizzazione nel vector store persistente
+    for i, chunk in enumerate(chunks):
+        # Genera un ID univoco per il singolo chunk
+        doc_id = f"{source_name}_chunk_{i}_{uuid.uuid4().hex[:6]}"
+        
+        # Struttura dei metadati per soddisfare RF-08 (Tracciamento delle fonti)
+        metadata = {
+            "source": source_name,
+            "chunk_index": i,
+            "page": 1  # Valore di default (può essere raffinato tracciando la pagina esatta nel PDF)
+        }
+        
+        # Salva nel database vettoriale (chiama embeddings.py e ChromaDB)
+        add_document_chunk(doc_id=doc_id, text=chunk, metadata=metadata)
+        
+    return len(chunks)
