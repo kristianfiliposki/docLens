@@ -1,9 +1,12 @@
 import os
 import io
 import tiktoken
+import uuid
 from fastapi import UploadFile, HTTPException
 from pypdf import PdfReader
 from app.config import settings
+from app.vectorstore import add_document_chunk
+from app.tokens import count_tokens  
 
 
 def extract_text_from_file(file: UploadFile) -> str:
@@ -97,10 +100,46 @@ def chunk_text_by_tokens(text: str, chunk_size: int = settings.CHUNK_SIZE, overl
 
     return chunks
 
-import uuid
-from app.vectorstore import add_document_chunk
 
-def ingest_file(file: UploadFile) -> int:
+
+def ingest_file(file: UploadFile) -> dict:
+    """
+    Pipeline completa di ingestion (RF-01, RF-02, RF-03, RF-05, RF-08, RF-09):
+    Restituisce il numero di chunk indicizzati e i token totali del documento.
+    """
+    # 1. Estrazione e validazione preliminare del testo
+    text = extract_text_from_file(file)
+    source_name = file.filename or "unknown"
+    
+    # Calcola i token totali del documento (RF-09)
+    total_document_tokens = count_tokens(text)
+    
+    # 2. Chunking basato sui token
+    chunks = chunk_text_by_tokens(text)
+    
+    if not chunks:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossibile generare chunk dal documento fornito."
+        )
+
+    # 3. Indicizzazione nel vector store persistente con metadati ricchi
+    for i, chunk in enumerate(chunks):
+        doc_id = f"{source_name}_chunk_{i}_{uuid.uuid4().hex[:6]}"
+        
+        metadata = {
+            "source": source_name,
+            "chunk_index": i,
+            "page": 1
+        }
+        
+        add_document_chunk(doc_id=doc_id, text=chunk, metadata=metadata)
+        
+    return {
+        "filename": source_name,
+        "chunks_created": len(chunks),
+        "total_tokens": total_document_tokens  # RF-09
+    }
     """
     Pipeline completa di ingestion:
     1. Estrae e valida il testo del file caricato (RF-01, RF-02).
